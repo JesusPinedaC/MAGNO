@@ -20,7 +20,7 @@ class MAGNO(tf.keras.Model):
         dense_block = as_block(dense_block)
 
         # Define the student model.
-        self.student = encoder
+        self.encoder = encoder
 
         # Define representation layer. This layer is used to project the
         # latent representation of the encoder to higher dimensional space,
@@ -36,14 +36,22 @@ class MAGNO(tf.keras.Model):
             layers.Dense(representation_size)(layer),
         )
 
-        # Define the teacher as a copy of the student model.
-        # This implies that the teacher is also initialized
-        # with the same weights as the student.
+        # Define the teacher model. Importantly, The teacher is
+        # initialized with the same weights as the student.
         self.teacher = teacher
         self.teacher.set_weights(self.student.get_weights())
 
+        # Clone projection head for teacher.
+        self.teacher_projection_head = tf.keras.models.clone_model(
+            self.projection_head
+        )
+        self.teacher_projection_head.set_weights(
+            self.projection_head.get_weights()
+        )
+
         # Set the teacher to be not trainable
         self.teacher.trainable = False
+        self.teacher_projection_head.trainable = False
 
     def train_step(self, data):
 
@@ -60,7 +68,7 @@ class MAGNO(tf.keras.Model):
 
                 # Compute projections.
                 proj_s.append(self.projection_head(out_s))
-                proj_t.append(self.projection_head(out_t))
+                proj_t.append(self.teacher_projection_head(out_t))
 
             # Concatenate representations into a single matrix.
             # SIZE: (batch_size//2, representation_size)
@@ -86,13 +94,19 @@ class MAGNO(tf.keras.Model):
         )
 
         # Update weights of the teacher using an exponential
-        # moving average (EMA) on the student weights
-        self.teacher.set_weights(
-            tf.nest.map_structure(
-                lambda x, y: (1 - self.momentum) * x + self.momentum * y,
-                self.student.trainable_weights,
-                self.teacher.trainable_weights
-            )
+        # moving average (EMA) on the student weights.
+        teacher_vars = self.teacher.trainable_weights + \
+            self.teacher_projection_head.trainable_weights
+        teacher_vars = tf.nest.map_structure(
+            lambda x, y: (1 - self.momentum) * x + self.momentum * y,
+            trainable_vars,
+            teacher_vars,
+        )
+
+        # Update the teacher model.
+        self.teacher.set_weights(teacher_vars[:len(self.teacher.weights)])
+        self.teacher_projection_head.set_weights(
+            teacher_vars[len(self.teacher.weights):]
         )
 
         # Return dict mapping the loss to its current value
