@@ -1,4 +1,3 @@
-from scipy.fftpack import sc_diff
 import tensorflow as tf
 import numpy as np
 
@@ -13,9 +12,6 @@ def CosineDecay(start, stop, epochs, warmup_epochs=0, **kwargs):
     schedule = stop + 0.5 * (start - stop) * (
         1 + tf.math.cos(np.pi * iters / len(iters))
     )
-
-    print(type(warmup_schedule))
-    print(type(schedule))
 
     # Concatenate schedules
     schedule = tf.concat(
