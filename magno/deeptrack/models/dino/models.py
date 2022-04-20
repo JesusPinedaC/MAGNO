@@ -79,8 +79,10 @@ class MAGNO(tf.keras.Model):
             loss = self.compiled_loss(proj_s, proj_t)
 
         # compute gradients
-        trainable_vars = self.student.trainable_weights + \
-            self.projection_head.trainable_weights
+        trainable_vars = (
+            self.student.trainable_weights
+            + self.projection_head.trainable_weights
+        )
         grads = tape.gradient(
             loss,
             trainable_vars,
@@ -95,8 +97,10 @@ class MAGNO(tf.keras.Model):
 
         # Update weights of the teacher using an exponential
         # moving average (EMA) on the student weights.
-        teacher_vars = self.teacher.trainable_weights + \
-            self.teacher_projection_head.trainable_weights
+        teacher_vars = (
+            self.teacher.trainable_weights
+            + self.teacher_projection_head.trainable_weights
+        )
         teacher_vars = tf.nest.map_structure(
             lambda x, y: (1 - self.momentum) * x + self.momentum * y,
             trainable_vars,
@@ -104,9 +108,11 @@ class MAGNO(tf.keras.Model):
         )
 
         # Update the teacher model.
-        self.teacher.set_weights(teacher_vars[:len(self.teacher.weights)])
+        self.teacher.set_weights(teacher_vars[: len(self.teacher.weights)])
+
+        # Update the teacher projection head.
         self.teacher_projection_head.set_weights(
-            teacher_vars[len(self.teacher.weights):]
+            teacher_vars[len(self.teacher.weights) :]
         )
 
         # Return dict mapping the loss to its current value
