@@ -1,10 +1,11 @@
 import tensorflow as tf
 from tensorflow.keras import layers
 
-from ..utils import GELU
+from ..utils import as_KerasModel, GELU
 from ..layers import as_block, DenseBlock
 
 
+@as_KerasModel
 class MAGNO(tf.keras.Model):
     def __init__(
         self,
@@ -15,7 +16,7 @@ class MAGNO(tf.keras.Model):
         dense_block=DenseBlock(activation=GELU, normalization=None),
         **kwargs
     ):
-        super(MAGNO, self).__init__(**kwargs)
+        super().__init__()
 
         dense_block = as_block(dense_block)
 
@@ -39,7 +40,7 @@ class MAGNO(tf.keras.Model):
         # Define the teacher model. Importantly, The teacher is
         # initialized with the same weights as the student.
         self.teacher = teacher
-        self.teacher.set_weights(self.student.get_weights())
+        self.teacher.set_weights(self.encoder.get_weights())
 
         # Clone projection head for teacher.
         self.teacher_projection_head = tf.keras.models.clone_model(
@@ -63,7 +64,7 @@ class MAGNO(tf.keras.Model):
             for batch_s, batch_t in zip(*data):
                 # Compute global representations from
                 # student and teacher models.
-                out_s = self.student(batch_s)
+                out_s = self.encoder(batch_s)
                 out_t = self.teacher(batch_t)
 
                 # Compute projections.
@@ -80,7 +81,7 @@ class MAGNO(tf.keras.Model):
 
         # compute gradients
         trainable_vars = (
-            self.student.trainable_weights
+            self.encoder.trainable_weights
             + self.projection_head.trainable_weights
         )
         grads = tape.gradient(
