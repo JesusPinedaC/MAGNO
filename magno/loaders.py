@@ -65,7 +65,6 @@ def NodeExtractor(
         enumerate(data), total=len(data), desc="Loading node features"
     ):
         loc = d["loc"]
-
         augmentor = CentroidAugmentor(loc, **kwargs)
 
         for subset in range(graphs_per_set):
