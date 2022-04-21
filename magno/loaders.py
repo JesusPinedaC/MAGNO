@@ -4,6 +4,8 @@ import json
 import itertools
 import pandas as pd
 
+import tqdm
+from operator import itemgetter
 
 _PATH_TO_DATASET = "datasets/{mode}/dataset.json"
 
@@ -32,9 +34,11 @@ class CentroidAugmentor:
         return centroids
 
     def __call__(self):
-        return list(
-            itertools.chain.from_iterable(
-                [self.augment(x, y) for x, y in self.locs]
+        return np.stack(
+            list(
+                itertools.chain.from_iterable(
+                    [self.augment(x, y) for x, y in self.locs]
+                )
             )
         )
 
@@ -42,7 +46,7 @@ class CentroidAugmentor:
 def NodeExtractor(
     mode="training",
     properties: dict = {},
-    labels: list = ["class", "num_proteins"],
+    label_keys: list = ["class", "num_proteins"],
     graphs_per_set=500,
     **kwargs
 ):
@@ -56,26 +60,38 @@ def NodeExtractor(
     _properties = {"centroids": 128}
     _properties.update(properties)
 
-    dfs = []
-    for _set, d in enumerate(data):
+    dfs, labels = [], []
+    for _set, d in tqdm.tqdm(
+        enumerate(data), total=len(data), desc="Loading node features"
+    ):
         loc = d["loc"]
 
         augmentor = CentroidAugmentor(loc, **kwargs)
 
         for subset in range(graphs_per_set):
             # append data
+            centroids = augmentor()
             df = pd.DataFrame(
                 {
-                    "centroids": augmentor(),
+                    "centroids-x": centroids[:, 0],
+                    "centroids-y": centroids[:, 1],
                     "set": _set,
                     "subset": subset,
-                    "class": d["class"],
-                    "num_proteins": d["num_proteins"],
                 }
             )
+            df["length"] = len(df)
             dfs.append(df)
 
-    dfs = pd.concat(dfs).reset_index(drop=True)
+        # append labels
+        label = list(map(d.get, label_keys))
+        labels.append(label)
+
+    # Concatenate dataframes
+    dfs = pd.concat(dfs)
+
+    # Add a column for the indexes of the nodes
+    dfs["idx"] = dfs.index
+    dfs = dfs.reset_index(drop=True)
 
     # Normalize node attributes
     for key in _properties.keys():
@@ -83,8 +99,4 @@ def NodeExtractor(
             dfs.loc[:, dfs.columns.str.contains(key)] / _properties[key]
         )
 
-    # Merge labels
-    dfs["labels"] = dfs[labels].values.tolist()
-    dfs = dfs.drop(labels, axis=1)
-
-    return dfs, data
+    return dfs, labels
