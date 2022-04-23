@@ -89,7 +89,6 @@ class TemperatureSheduler(Scheduler):
 
     def on_epoch_begin(self, epoch, logs=None):
         self.model.loss.temperature = self.schedule[epoch]
-        print("Temperature: {}".format(self.model.loss.temperature))
 
     def default_schedule(self):
         return PiecewiseConstantDecay(
