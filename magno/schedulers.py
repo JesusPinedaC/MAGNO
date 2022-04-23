@@ -2,7 +2,9 @@ import tensorflow as tf
 import numpy as np
 
 
-def CosineDecay(start, stop, epochs, warmup_epochs=0, **kwargs):
+def CosineDecay(
+    start, stop, epochs, warmup_epochs=0, return_callable=False, **kwargs
+):
 
     # warmup_epochs
     warmup_schedule = tf.linspace(0, 1, warmup_epochs) * start
@@ -18,11 +20,16 @@ def CosineDecay(start, stop, epochs, warmup_epochs=0, **kwargs):
         (warmup_schedule, tf.cast(schedule, warmup_schedule.dtype)), axis=0
     )
 
-    return schedule
+    if return_callable:
+        return lambda step: schedule[step]
+    else:
+        return schedule
 
 
-def PiecewiseConstantDecay(start, stop, epochs, warmup_epochs=0, **kwargs):
-    return tf.concat(
+def PiecewiseConstantDecay(
+    start, stop, epochs, warmup_epochs=0, return_callable=False, **kwargs
+):
+    schedule = tf.concat(
         (
             np.linspace(
                 start,
@@ -34,6 +41,11 @@ def PiecewiseConstantDecay(start, stop, epochs, warmup_epochs=0, **kwargs):
         axis=0,
     )
 
+    if return_callable:
+        return lambda step: schedule[step]
+    else:
+        return schedule
+
 
 class Scheduler(tf.keras.callbacks.Callback):
     """
@@ -43,7 +55,7 @@ class Scheduler(tf.keras.callbacks.Callback):
     into the various stages of the model training lifecycle.
     """
 
-    def __init__(self, schedule: tf.Tensor = None, **kwargs):
+    def __init__(self, schedule: callable = None, **kwargs):
         super(Scheduler, self).__init__(**kwargs)
 
         self.schedule = schedule
@@ -73,6 +85,7 @@ class MomentumScheduler(Scheduler):
 
     def on_epoch_begin(self, epoch, logs=None):
         self.model.momentum = self.schedule[epoch]
+        print("Momentum: {}".format(self.model.momentum))
 
     def default_schedule(self):
         return CosineDecay(0.996, 1.0, self.epochs)
@@ -94,6 +107,38 @@ class TemperatureSheduler(Scheduler):
         return PiecewiseConstantDecay(
             0.04, 0.07, self.epochs, warmup_epochs=30
         )
+
+
+class WeightDecayScheduler(Scheduler):
+    """
+    Weight decay scheduler.
+
+    At the beginning of every epoch, this callback gets the updated weight decay
+    value from `schedule` function provided at `__init__`, with the current epoch
+    and current weight decay, and applies the updated weight decay on the optimizer.
+    """
+
+    def on_epoch_begin(self, epoch, logs=None):
+        self.model.optimizer.weight_decay = self.schedule[epoch]
+
+    def default_schedule(self):
+        return CosineDecay(0.04, 0.4, self.epochs)
+
+
+class LearningRateScheduler(Scheduler):
+    """
+    Learning rate scheduler.
+
+    At the beginning of every epoch, this callback gets the updated learning rate
+    value from `schedule` function provided at `__init__`, with the current epoch
+    and current learning rate, and applies the updated learning rate on the optimizer.
+    """
+
+    def on_epoch_begin(self, epoch, logs=None):
+        self.model.optimizer.learning_rate = self.schedule[epoch]
+
+    def default_schedule(self):
+        return CosineDecay(5e-4, 1e-5, self.epochs)
 
 
 class CenterSetter(tf.keras.callbacks.Callback):
