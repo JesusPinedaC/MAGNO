@@ -91,7 +91,7 @@ class MomentumScheduler(Scheduler):
         return CosineDecay(0.996, 1.0, self.epochs)
 
 
-class TemperatureSheduler(Scheduler):
+class TemperatureScheduler(Scheduler):
     """
     Temperature scheduler.
 
