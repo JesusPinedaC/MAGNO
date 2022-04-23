@@ -94,3 +94,20 @@ class TemperatureSheduler(Scheduler):
         return PiecewiseConstantDecay(
             0.04, 0.07, self.epochs, warmup_epochs=30
         )
+
+
+class CenterSetter(tf.keras.callbacks.Callback):
+    """
+    Center setter.
+
+    At the beginning of training, this callback zero-initializes the `center`
+    matrix used in the loss function. This matrix is then updated at the end
+    of each epoch by taking the mean of the teacher output.
+    """
+
+    def on_train_begin(self, logs=None):
+        # Extract representation size from model
+        representation_size = self.model.representation_size
+
+        # Zero-initialize the `center` matrix
+        self.model.loss.center = tf.zeros((1, representation_size))
