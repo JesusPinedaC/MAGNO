@@ -21,9 +21,30 @@ def CosineDecay(start, stop, epochs, warmup_epochs=0, **kwargs):
     return schedule
 
 
-class MomentumScheduler(tf.keras.callbacks.Callback):
+def PiecewiseConstantDecay(start, stop, epochs, warmup_epochs=0, **kwargs):
+    return tf.concat(
+        (
+            np.linspace(
+                start,
+                stop,
+                warmup_epochs,
+            ),
+            np.ones(epochs - warmup_epochs) * stop,
+        ),
+        axis=0,
+    )
+
+
+class Scheduler(tf.keras.callbacks.Callback):
+    """
+    Abstract base class used to build new schedulers.
+
+    Schedulers can be passed to keras method `fit` in order to hook
+    into the various stages of the model training lifecycle.
+    """
+
     def __init__(self, schedule: tf.Tensor = None, **kwargs):
-        super(MomentumScheduler, self).__init__(**kwargs)
+        super(Scheduler, self).__init__(**kwargs)
 
         self.schedule = schedule
 
@@ -40,8 +61,37 @@ class MomentumScheduler(tf.keras.callbacks.Callback):
             self.epochs, len(self.schedule)
         )
 
+
+class MomentumScheduler(Scheduler):
+    """
+    Momentum scheduler.
+
+    At the beginning of every epoch, this callback gets the updated momentum value
+    from `schedule` function provided at `__init__`, with the current epoch and
+    current momentum, and applies the updated momentum on the model update.
+    """
+
     def on_epoch_begin(self, epoch, logs=None):
         self.model.momentum = self.schedule[epoch]
 
     def default_schedule(self):
         return CosineDecay(0.996, 1.0, self.epochs)
+
+
+class TemperatureSheduler(Scheduler):
+    """
+    Temperature scheduler.
+
+    At the beginning of every epoch, this callback gets the updated temperature
+    value from `schedule` function provided at `__init__`, with the current epoch
+    and current temperature, and applies the updated temperature on the loss update.
+    """
+
+    def on_epoch_begin(self, epoch, logs=None):
+        self.model.loss.temperature = self.schedule[epoch]
+        print("Temperature: {}".format(self.model.loss.temperature))
+
+    def default_schedule(self):
+        return PiecewiseConstantDecay(
+            0.04, 0.07, self.epochs, warmup_epochs=30
+        )
