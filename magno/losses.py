@@ -26,22 +26,20 @@ class DINOLoss(tf.keras.losses.Loss):
         """
         student_out /= self.student_temp
         teacher_out = tf.nn.softmax(
-            (teacher_out - self.center) / self.temperature
+            (teacher_out - tf.cast(self.center, teacher_out.dtype))
+            / tf.cast(self.temperature, self.center.dtype)
         )
 
         # Compute the cross-entropy between the teacher and student outputs
-        total_loss, terms = 0, 0
-        for t, s in itertools.product(teacher_out, student_out):
-            loss = tf.reduce_sum(-t * tf.nn.log_softmax(s, axis=-1), axis=-1)
-            total_loss += tf.reduce_mean(loss)
-
-            # Count the number of terms
-            terms += 1
-
-        # Average the loss
-        total_loss /= terms
+        loss = tf.map_fn(
+            lambda x: tf.reduce_sum(
+                -teacher_out * tf.nn.log_softmax(x, axis=-1), axis=-1
+            ),
+            elems=student_out,
+        )
+        loss = tf.reduce_mean(loss)
 
         # Update center
         self.update_center(teacher_out)
 
-        return total_loss
+        return loss
