@@ -37,6 +37,8 @@ class ContinuousGraphGenerator(ContinuousGenerator):
         batch, labels = super().__getitem__(idx)
 
         # Converts each element of nested list to numy array
-        batch = [list(map(np.array, b)) for b in batch[0]]
+        batch = [
+            list(map(lambda x: np.array(x)[np.newaxis], b)) for b in batch[0]
+        ]
 
         return batch, labels
