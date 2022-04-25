@@ -20,12 +20,13 @@ def GetSubSet(randset, randsubsets, **kwargs):
         node_features = graph[0][nodeidxs]
         edge_features = graph[1][edgeidxs]
         edge_connections = graph[2][edgeidxs]
+        edge_weights = graph[3][edgeidxs]
 
         node_sets = sets[0][nodeidxs]
         edge_sets = sets[1][edgeidxs]
 
         return (
-            (node_features, edge_features, edge_connections),
+            (node_features, edge_features, edge_connections, edge_weights),
             labels[randset],
             (node_sets, edge_sets),
         )
@@ -73,6 +74,37 @@ def AugmentCentroids(rotate, translate):
         node_features[:, 0] = centroids_x + 0.5
         node_features[:, 1] = centroids_y + 0.5
 
-        return (node_features, *graph[1:]), labels
+        return (node_features, *graph[1:]), labels, sets
+
+    return inner
+
+
+def Splitter():
+    def inner(data):
+        graph, labels, sets = data
+
+        # Extract subsets ids
+        node_subind, edge_subind = (
+            np.unique(sets[0][:, 1], return_counts=True)[1],
+            np.unique(sets[1][:, 1], return_counts=True)[1],
+        )
+        node_subind = np.cumsum(node_subind)
+        edge_subind = np.cumsum(edge_subind)
+
+        # Split graph
+        graphs = zip(
+            *list(
+                map(
+                    lambda x, ind: np.split(x, ind)[:-1],
+                    graph,
+                    [node_subind, *(edge_subind,) * 3],
+                )
+            )
+        )
+
+        # Combine batch
+        batch = list(graphs)
+
+        return batch, labels
 
     return inner
