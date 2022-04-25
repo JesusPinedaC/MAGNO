@@ -4,9 +4,16 @@ from tensorflow.keras import layers
 from ..utils import as_KerasModel, GELU
 from ..layers import as_block, DenseBlock
 
+from ....generators import ContinuousGraphGenerator
+
 
 @as_KerasModel
 class MAGNO(tf.keras.Model):
+
+    # Generator that asynchronously generates
+    #  graph representations.
+    data_generator = ContinuousGraphGenerator
+
     def __init__(
         self,
         encoder,
@@ -118,3 +125,6 @@ class MAGNO(tf.keras.Model):
 
         # Return dict mapping the loss to its current value
         return {"loss": loss}
+
+    def call(self, *args, **kwargs):
+        return self.encoder(*args, **kwargs)
