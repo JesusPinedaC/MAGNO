@@ -143,9 +143,13 @@ def GraphExtractor(
         edgesdf, props=("feature",), **kwargs
     )
 
-    # # Extract set ids
+    # Extract set ids
     nodesets = nodesdf[["set", "subset"]].to_numpy()
     edgesets = edgesdf[["set", "subset"]].to_numpy()
+
+    # Create edge weights matrix
+    # NOTE: IGNORED in the current implementation.
+    edgeweights = np.ones_like(sparseadjmtx)
 
     labels = (
         labels
@@ -156,7 +160,7 @@ def GraphExtractor(
     )
 
     return (
-        (nodefeatures, edgefeatures, sparseadjmtx),
+        (nodefeatures, edgefeatures, sparseadjmtx, edgeweights),
         labels,
         (nodesets, edgesets),
     )
