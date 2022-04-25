@@ -39,7 +39,9 @@ __all__ = [
 ]
 
 
-def compile(model: models.Model, *, loss="mae", optimizer="adam", metrics=[], **kwargs):
+def compile(
+    model: models.Model, *, loss="mae", optimizer="adam", metrics=[], **kwargs
+):
     """Compiles a model.
 
     Parameters
@@ -118,9 +120,9 @@ def single_layer_call(
     x, layer, activation, normalization, norm_kwargs, activation_first=True
 ):
     """Calls a layer with activation and normalization."""
-    assert isinstance(norm_kwargs, dict), "norm_kwargs must be a dict. Got {0}".format(
-        type(norm_kwargs)
-    )
+    assert isinstance(
+        norm_kwargs, dict
+    ), "norm_kwargs must be a dict. Got {0}".format(type(norm_kwargs))
 
     n = (
         lambda x: as_normalization(normalization)(**norm_kwargs)(x)
@@ -158,7 +160,7 @@ def as_KerasModel(func):
     @wraps(func)
     def inner(*args, **kwargs):
         model = func(*args, **kwargs)
-        return KerasModel(model, **kwargs)
+        return KerasModel(model, data_generator=model.data_generator, **kwargs)
 
     return inner
 
@@ -201,8 +203,6 @@ class KerasModel(Model):
     Compiles the model using the loss and optimizer defined in the constructor.
     """
 
-    data_generator = ContinuousGenerator
-
     def __init__(
         self,
         model,
@@ -211,6 +211,7 @@ class KerasModel(Model):
         metrics=[],
         compile=True,
         add_batch_dimension_on_resolve=True,
+        data_generator=ContinuousGenerator,
         **kwargs,
     ):
 
@@ -223,6 +224,8 @@ class KerasModel(Model):
             metrics=metrics,
             **kwargs,
         )
+
+        self.data_generator = data_generator
 
     @wraps(models.Model.fit)
     def fit(self, x, *args, batch_size=32, generator_kwargs={}, **kwargs):
@@ -295,7 +298,9 @@ class KerasModel(Model):
         dij_config = BioImageModelZooConfig(model, minimum_size)
         dij_config.Name = "DeepTrack 2.1 model"
 
-        dij_config.add_weights_formats(model, "Tensorflow", authors=dij_config.Authors)
+        dij_config.add_weights_formats(
+            model, "Tensorflow", authors=dij_config.Authors
+        )
         dij_config.export_model(path)
 
     def get(self, image, add_batch_dimension_on_resolve, **kwargs):
