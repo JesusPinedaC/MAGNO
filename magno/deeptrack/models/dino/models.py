@@ -1,17 +1,16 @@
 import tensorflow as tf
 from tensorflow.keras import layers
 
-from ..utils import as_KerasModel, GELU
+from ..utils import GELU, KerasModel
 from ..layers import as_block, DenseBlock
 
 from ....generators import ContinuousGraphGenerator
 
 
-@as_KerasModel
 class MAGNO(tf.keras.Model):
 
     # Generator that asynchronously generates
-    #  graph representations.
+    # graph representations.
     data_generator = ContinuousGraphGenerator
 
     def __init__(
@@ -28,12 +27,17 @@ class MAGNO(tf.keras.Model):
         dense_block = as_block(dense_block)
 
         # Define the student model.
-        self.encoder = encoder
+        self.encoder = (
+            encoder.model if isinstance(encoder, KerasModel) else encoder
+        )
+
+        # Define representation size
+        self.representation_size = representation_size
 
         # Define representation layer. This layer is used to project the
         # latent representation of the encoder to higher dimensional space,
         # and is shared between the teacher and the student.
-        input_layer = layers.Input(shape=encoder.output_shape)
+        input_layer = layers.Input(shape=(encoder.output_shape[1:]))
 
         layer = input_layer
         for _ in range(num_projection_layers):
@@ -46,7 +50,9 @@ class MAGNO(tf.keras.Model):
 
         # Define the teacher model. Importantly, The teacher is
         # initialized with the same weights as the student.
-        self.teacher = teacher
+        self.teacher = (
+            teacher.model if isinstance(teacher, KerasModel) else teacher
+        )
         self.teacher.set_weights(self.encoder.get_weights())
 
         # Clone projection head for teacher.
@@ -63,6 +69,8 @@ class MAGNO(tf.keras.Model):
 
     def train_step(self, data):
 
+        data, *_ = data
+
         idx = len(data) // 2
         data = data[:idx], data[idx:]
 
@@ -75,8 +83,15 @@ class MAGNO(tf.keras.Model):
                 out_t = self.teacher(batch_t)
 
                 # Compute projections.
-                proj_s.append(self.projection_head(out_s))
-                proj_t.append(self.teacher_projection_head(out_t))
+                out_s = self.projection_head(out_s)
+                out_t = self.teacher_projection_head(out_t)
+
+                # Normalize representations.
+                out_s = tf.math.l2_normalize(out_s, axis=-1)
+                out_t = tf.math.l2_normalize(out_t, axis=-1)
+
+                proj_s.append(out_s)
+                proj_t.append(out_t)
 
             # Concatenate representations into a single matrix.
             # SIZE: (batch_size//2, representation_size)
@@ -106,25 +121,24 @@ class MAGNO(tf.keras.Model):
         # Update weights of the teacher using an exponential
         # moving average (EMA) on the student weights.
         teacher_vars = (
-            self.teacher.trainable_weights
-            + self.teacher_projection_head.trainable_weights
+            self.teacher.weights + self.teacher_projection_head.weights
         )
         teacher_vars = tf.nest.map_structure(
-            lambda x, y: (1 - self.momentum) * x + self.momentum * y,
+            lambda x, y: y.assign(
+                (1 - tf.cast(self.momentum, x.dtype)) * x
+                + tf.cast(self.momentum, y.dtype) * y
+            ),
             trainable_vars,
             teacher_vars,
         )
 
-        # Update the teacher model.
-        self.teacher.set_weights(teacher_vars[: len(self.teacher.weights)])
-
-        # Update the teacher projection head.
-        self.teacher_projection_head.set_weights(
-            teacher_vars[len(self.teacher.weights) :]
-        )
-
         # Return dict mapping the loss to its current value
-        return {"loss": loss}
+        return {
+            "loss": loss,
+            "lr": self.optimizer.learning_rate,
+            "momentum": self.momentum,
+            "temperature": self.loss.temperature,
+        }
 
-    def call(self, *args, **kwargs):
-        return self.encoder(*args, **kwargs)
+    def call(self, x):
+        return self.encoder(x)
