@@ -1,5 +1,4 @@
 import tensorflow as tf
-import itertools
 
 
 class DINOLoss(tf.keras.losses.Loss):
@@ -14,12 +13,12 @@ class DINOLoss(tf.keras.losses.Loss):
 
         # Update batch center using an exponential
         # moving average (EMA)
-        self.center = (
+        self.center.assign(
             self.center * self.center_momentum
             + (1 - self.center_momentum) * batch_center
         )
 
-    def __call__(self, student_out, teacher_out, sample_weight=None):
+    def call(self, student_out, teacher_out):
         """
         Computes the cross-entropy between the softmax outputs of the
         teacher and student networks.
