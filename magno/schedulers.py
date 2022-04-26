@@ -155,4 +155,6 @@ class CenterSetter(tf.keras.callbacks.Callback):
         representation_size = self.model.representation_size
 
         # Zero-initialize the `center` matrix
-        self.model.loss.center = tf.zeros((1, representation_size))
+        self.model.loss.center = tf.Variable(
+            tf.zeros((1, representation_size))
+        )
