@@ -85,7 +85,6 @@ class MomentumScheduler(Scheduler):
 
     def on_epoch_begin(self, epoch, logs=None):
         self.model.momentum = self.schedule[epoch]
-        print("Momentum: {}".format(self.model.momentum))
 
     def default_schedule(self):
         return CosineDecay(0.996, 1.0, self.epochs)
