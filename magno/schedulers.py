@@ -1,3 +1,4 @@
+from subprocess import call
 import tensorflow as tf
 import numpy as np
 
@@ -10,7 +11,7 @@ class Scheduler(tf.keras.callbacks.Callback):
     into the various stages of the model training lifecycle.
     """
 
-    def __init__(self, schedule: callable = None, **kwargs):
+    def __init__(self, schedule: tf.Tensor or callable = None, **kwargs):
         super(Scheduler, self).__init__(**kwargs)
 
         self.schedule = schedule
@@ -19,7 +20,8 @@ class Scheduler(tf.keras.callbacks.Callback):
         self.epochs = self.params.get("epochs")
 
         # If schedule is None, initialize the schedule with default values
-        self.schedule = self.schedule or self.default_schedule()
+        if self.schedule is None:
+            self.schedule = self.default_schedule()
 
         # assert length of schedule is equal to epochs
         assert self.epochs == len(
