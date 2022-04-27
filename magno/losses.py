@@ -2,11 +2,16 @@ import tensorflow as tf
 
 
 class DINOLoss(tf.keras.losses.Loss):
-    def __init__(self, student_temp=0.1, center_momentum=0.9, **kwargs):
+    def __init__(
+        self, student_temp=0.1, center_momentum=0.9, temperature=0.04, **kwargs
+    ):
         super().__init__(**kwargs)
 
         self.student_temp = student_temp
         self.center_momentum = center_momentum
+
+        # Define temperature
+        self.temperature = tf.Variable(temperature, trainable=False)
 
     def update_center(self, teacher_output):
         batch_center = tf.reduce_mean(teacher_output, axis=0)
