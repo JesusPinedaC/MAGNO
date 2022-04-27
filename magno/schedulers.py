@@ -2,51 +2,6 @@ import tensorflow as tf
 import numpy as np
 
 
-def CosineDecay(
-    start, stop, epochs, warmup_epochs=0, return_callable=False, **kwargs
-):
-
-    # warmup_epochs
-    warmup_schedule = tf.linspace(0, 1, warmup_epochs) * start
-
-    # Cosine decay
-    iters = tf.range(epochs - warmup_epochs, dtype=tf.float32)
-    schedule = stop + 0.5 * (start - stop) * (
-        1 + tf.math.cos(np.pi * iters / len(iters))
-    )
-
-    # Concatenate schedules
-    schedule = tf.concat(
-        (warmup_schedule, tf.cast(schedule, warmup_schedule.dtype)), axis=0
-    )
-
-    if return_callable:
-        return lambda step: schedule[step]
-    else:
-        return schedule
-
-
-def PiecewiseConstantDecay(
-    start, stop, epochs, warmup_epochs=0, return_callable=False, **kwargs
-):
-    schedule = tf.concat(
-        (
-            np.linspace(
-                start,
-                stop,
-                warmup_epochs,
-            ),
-            np.ones(epochs - warmup_epochs) * stop,
-        ),
-        axis=0,
-    )
-
-    if return_callable:
-        return lambda step: schedule[step]
-    else:
-        return schedule
-
-
 class Scheduler(tf.keras.callbacks.Callback):
     """
     Abstract base class used to build new schedulers.
@@ -84,7 +39,9 @@ class MomentumScheduler(Scheduler):
     """
 
     def on_epoch_begin(self, epoch, logs=None):
-        self.model.momentum = self.schedule[epoch]
+        self.model.momentum.assign(
+            tf.cast(self.schedule[epoch], self.model.momentum.dtype)
+        )
 
     def default_schedule(self):
         return CosineDecay(0.996, 1.0, self.epochs)
@@ -100,8 +57,12 @@ class TemperatureScheduler(Scheduler):
     """
 
     def on_epoch_begin(self, epoch, logs=None):
-        self.model.loss.temperature = self.schedule[epoch]
+        self.model.loss.temperature.assign(
+            tf.cast(self.schedule[epoch], self.model.loss.temperature.dtype)
+        )
 
+    # NOTE: 'temperature' linearly ramps up from 0.04 to 0.07 during
+    # the first 30 epochs.
     def default_schedule(self):
         return PiecewiseConstantDecay(
             0.04, 0.07, self.epochs, warmup_epochs=30
@@ -118,8 +79,13 @@ class WeightDecayScheduler(Scheduler):
     """
 
     def on_epoch_begin(self, epoch, logs=None):
-        self.model.optimizer.weight_decay = self.schedule[epoch]
+        self.model.optimizer.weight_decay.assign(
+            tf.cast(
+                self.schedule[epoch], self.model.optimizer.weight_decay.dtype
+            )
+        )
 
+    # NOTE: 'weight_decay' follows a cosine schedule from 0.04 to 0.4
     def default_schedule(self):
         return CosineDecay(0.04, 0.4, self.epochs)
 
@@ -134,10 +100,18 @@ class LearningRateScheduler(Scheduler):
     """
 
     def on_epoch_begin(self, epoch, logs=None):
-        self.model.optimizer.learning_rate = self.schedule[epoch]
+        self.model.optimizer.learning_rate.assign(
+            tf.cast(
+                self.schedule[epoch], self.model.optimizer.learning_rate.dtype
+            )
+        )
 
+    # NOTE: 'learning_rate' linearly ramps up from 1e-6 to 1e-3 during the
+    # first 10 epochs, and decays with a cosine schedule thereafter to 1e-6.
     def default_schedule(self):
-        return CosineDecay(5e-4, 1e-5, self.epochs)
+        return CosineDecay(
+            1e-3, 1e-6, self.epochs, base_value=1e-6, warmup_epochs=10
+        )
 
 
 class CenterSetter(tf.keras.callbacks.Callback):
@@ -155,5 +129,56 @@ class CenterSetter(tf.keras.callbacks.Callback):
 
         # Zero-initialize the `center` matrix
         self.model.loss.center = tf.Variable(
-            tf.zeros((1, representation_size))
+            tf.zeros((1, representation_size)), trainable=False
         )
+
+
+def CosineDecay(
+    start,
+    stop,
+    epochs,
+    base_value=1e-6,
+    warmup_epochs=0,
+    return_callable=False,
+    **kwargs
+):
+
+    # warmup_epochs
+    warmup_schedule = np.linspace(base_value, start, warmup_epochs)
+
+    # Cosine decay
+    iters = tf.range(epochs - warmup_epochs, dtype=tf.float32)
+    schedule = stop + 0.5 * (start - stop) * (
+        1 + tf.math.cos(np.pi * iters / len(iters))
+    )
+
+    # Concatenate schedules
+    schedule = tf.concat(
+        (warmup_schedule, tf.cast(schedule, warmup_schedule.dtype)), axis=0
+    )
+
+    if return_callable:
+        return lambda step: schedule[step]
+    else:
+        return schedule
+
+
+def PiecewiseConstantDecay(
+    start, stop, epochs, warmup_epochs=0, return_callable=False, **kwargs
+):
+    schedule = tf.concat(
+        (
+            np.linspace(
+                start,
+                stop,
+                warmup_epochs,
+            ),
+            np.ones(epochs - warmup_epochs) * stop,
+        ),
+        axis=0,
+    )
+
+    if return_callable:
+        return lambda step: schedule[step]
+    else:
+        return schedule
