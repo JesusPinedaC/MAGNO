@@ -67,6 +67,9 @@ class MAGNO(tf.keras.Model):
         self.teacher.trainable = False
         self.teacher_projection_head.trainable = False
 
+        # Initialize momentum
+        self.momentum = tf.Variable(1.0, trainable=False)
+
     def train_step(self, data):
 
         data, *_ = data
@@ -135,7 +138,8 @@ class MAGNO(tf.keras.Model):
         # Return dict mapping the loss to its current value
         return {
             "loss": loss,
-            "lr": self.optimizer.learning_rate,
+            "lr": self.optimizer._hyper["learning_rate"],
+            "weight_decay": self.optimizer._hyper["weight_decay"],
             "momentum": self.momentum,
             "temperature": self.loss.temperature,
         }
