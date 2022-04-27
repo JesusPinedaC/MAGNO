@@ -7,12 +7,72 @@ from ..layers import as_block, DenseBlock
 from ....generators import ContinuousGraphGenerator
 
 
-class MAGNO(tf.keras.Model):
+class MAGNOBaseModel(tf.keras.Model):
 
     # Generator that asynchronously generates
     # graph representations.
     data_generator = ContinuousGraphGenerator
 
+    def __init__(
+        self,
+        encoder_temperature=0.1,
+        center_momentum=0.9,
+        temperature=0.04,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+
+        # Encoder temperature
+        self.encoder_temperature = encoder_temperature
+        # Center momentum
+        self.center_momentum = center_momentum
+        # Temperature for the teacher output
+        self.temperature = tf.Variable(temperature, trainable=False)
+        # Initialize momentum
+        self.momentum = tf.Variable(1.0, trainable=False)
+
+        # Zero-initialize the `center` matrix
+        self.center = tf.Variable(
+            0.0, trainable=False, shape=tf.TensorShape(None)
+        )
+
+    def update_center(self, teacher_output):
+        batch_center = tf.reduce_mean(teacher_output, axis=0)
+
+        # Update batch center using an exponential
+        # moving average (EMA)
+        self.center.assign(
+            self.center * self.center_momentum
+            + (1 - self.center_momentum) * batch_center
+        )
+
+    def dino_loss(self, encoder_out, teacher_out):
+        """
+        Computes the cross-entropy between the softmax outputs of the
+        teacher and encoder networks.
+        """
+        encoder_out /= self.encoder_temperature
+        teacher_out = tf.nn.softmax(
+            (teacher_out - tf.cast(self.center, teacher_out.dtype))
+            / tf.cast(self.temperature, self.center.dtype)
+        )
+
+        # Compute the cross-entropy between the teacher and encoder outputs
+        loss = tf.map_fn(
+            lambda x: tf.reduce_sum(
+                -teacher_out * tf.nn.log_softmax(x, axis=-1), axis=-1
+            ),
+            elems=encoder_out,
+        )
+        loss = tf.reduce_mean(loss)
+
+        # Update center
+        self.update_center(teacher_out)
+
+        return loss
+
+
+class MAGNO(MAGNOBaseModel):
     def __init__(
         self,
         encoder,
@@ -22,11 +82,11 @@ class MAGNO(tf.keras.Model):
         dense_block=DenseBlock(activation=GELU, normalization=None),
         **kwargs
     ):
-        super().__init__()
+        super().__init__(**kwargs)
 
         dense_block = as_block(dense_block)
 
-        # Define the student model.
+        # Define the encoder model.
         self.encoder = (
             encoder.model if isinstance(encoder, KerasModel) else encoder
         )
@@ -36,7 +96,7 @@ class MAGNO(tf.keras.Model):
 
         # Define representation layer. This layer is used to project the
         # latent representation of the encoder to higher dimensional space,
-        # and is shared between the teacher and the student.
+        # and is shared between the teacher and the encoder.
         input_layer = layers.Input(shape=(encoder.output_shape[1:]))
 
         layer = input_layer
@@ -49,7 +109,7 @@ class MAGNO(tf.keras.Model):
         )
 
         # Define the teacher model. Importantly, The teacher is
-        # initialized with the same weights as the student.
+        # initialized with the same weights as the encoder.
         self.teacher = (
             teacher.model if isinstance(teacher, KerasModel) else teacher
         )
@@ -67,9 +127,6 @@ class MAGNO(tf.keras.Model):
         self.teacher.trainable = False
         self.teacher_projection_head.trainable = False
 
-        # Initialize momentum
-        self.momentum = tf.Variable(1.0, trainable=False)
-
     def train_step(self, data):
 
         data, *_ = data
@@ -81,7 +138,7 @@ class MAGNO(tf.keras.Model):
             proj_s, proj_t = [], []
             for batch_s, batch_t in zip(*data):
                 # Compute global representations from
-                # student and teacher models.
+                # encoder and teacher models.
                 out_s = self.encoder(batch_s)
                 out_t = self.teacher(batch_t)
 
@@ -102,7 +159,7 @@ class MAGNO(tf.keras.Model):
             proj_t = tf.concat(proj_t, axis=0)
 
             # Compute the loss.
-            loss = self.compiled_loss(proj_s, proj_t)
+            loss = self.dino_loss(proj_s, proj_t)
 
         # compute gradients
         trainable_vars = (
@@ -122,7 +179,7 @@ class MAGNO(tf.keras.Model):
         )
 
         # Update weights of the teacher using an exponential
-        # moving average (EMA) on the student weights.
+        # moving average (EMA) on the encoder weights.
         teacher_vars = (
             self.teacher.weights + self.teacher_projection_head.weights
         )
@@ -141,7 +198,7 @@ class MAGNO(tf.keras.Model):
             "lr": self.optimizer._hyper["learning_rate"],
             "weight_decay": self.optimizer._hyper["weight_decay"],
             "momentum": self.momentum,
-            "temperature": self.loss.temperature,
+            "temperature": self.temperature,
         }
 
     def call(self, x):
