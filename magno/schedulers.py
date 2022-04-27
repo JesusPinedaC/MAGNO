@@ -59,8 +59,8 @@ class TemperatureScheduler(Scheduler):
     """
 
     def on_epoch_begin(self, epoch, logs=None):
-        self.model.loss.temperature.assign(
-            tf.cast(self.schedule[epoch], self.model.loss.temperature.dtype)
+        self.model.temperature.assign(
+            tf.cast(self.schedule[epoch], self.model.temperature.dtype)
         )
 
     # NOTE: 'temperature' linearly ramps up from 0.04 to 0.07 during
@@ -113,25 +113,6 @@ class LearningRateScheduler(Scheduler):
     def default_schedule(self):
         return CosineDecay(
             1e-3, 1e-6, self.epochs, base_value=1e-6, warmup_epochs=10
-        )
-
-
-class CenterSetter(tf.keras.callbacks.Callback):
-    """
-    Center setter.
-
-    At the beginning of training, this callback zero-initializes the `center`
-    matrix used in the loss function. This matrix is then updated at the end
-    of each epoch by taking the mean of the teacher output.
-    """
-
-    def on_train_begin(self, logs=None):
-        # Extract representation size from model
-        representation_size = self.model.representation_size
-
-        # Zero-initialize the `center` matrix
-        self.model.loss.center = tf.Variable(
-            tf.zeros((1, representation_size)), trainable=False
         )
 
 
